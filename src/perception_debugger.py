@@ -1,233 +1,350 @@
 """
-Debugging tool for calibrating the perception layer
-Helps you:
-1. Find correct screen regions
-2. Test OCR accuracy
-3. Visualize detection regions
-4. Save training templates
+Improved calibration tool with better UX
+Uses keyboard controls instead of clunky mouse dragging
 """
 
 import cv2
 import numpy as np
-from eyes import PerceptionModule, GameState
+from perception_module import PerceptionModule
+import json
 import time
 
-class PerceptionDebugger:
-    """Interactive debugging tool for perception calibration"""
+class ImprovedCalibrator:
+    """
+    Much better calibration experience:
+    - Capture a single frame first
+    - Use arrow keys to position/resize boxes
+    - Press Enter to save region
+    - Visual feedback and guides
+    """
     
     def __init__(self):
         self.perception = PerceptionModule()
-        self.current_frame = None
-        self.regions = []
-        self.drawing = False
-        self.start_point = None
+        self.reference_frame = None
+        self.regions = {}
         
-    def run_interactive_capture(self):
-        """
-        Capture frames and display with annotations
-        Press keys:
-        - 's': Save current frame
-        - 'q': Quit
-        - 'r': Draw region (click and drag)
-        - 't': Test OCR on drawn region
-        """
-        print("Starting interactive capture...")
-        print("Controls:")
-        print("  's' - Save frame")
-        print("  'q' - Quit")
-        print("  'r' - Draw region for OCR test")
-        print("  'c' - Clear regions")
+        # Current box being edited
+        self.current_box = {
+            'x': 100,
+            'y': 100, 
+            'width': 100,
+            'height': 30
+        }
         
-        cv2.namedWindow('Pokemon Perception Debug')
-        cv2.setMouseCallback('Pokemon Perception Debug', self._mouse_callback)
+        self.region_names = [
+            'player_pokemon_name',
+            'player_level',
+            'player_hp',
+            'opponent_pokemon_name',
+            'opponent_level',
+            'opponent_hp_bar',
+            'move_1',
+            'move_2',
+            'move_3',
+            'move_4'
+        ]
+        
+        self.current_region_idx = 0
+        self.mode = 'position'  # 'position' or 'resize'
+        self.step_size = 5
+        
+    def capture_reference_frame(self):
+        """Capture and save a reference frame"""
+        print("\n" + "="*60)
+        print("STEP 1: Capture Reference Frame")
+        print("="*60)
+        print("\nMake sure you're IN A BATTLE in Pokemon")
+        print("Press any key when ready...")
+        
+        cv2.namedWindow('Reference Frame Capture')
         
         while True:
             output = self.perception.perceive()
-            self.current_frame = output.raw_frame.copy()
+            frame = output.raw_frame.copy()
             
-            # Draw overlays
-            self._draw_debug_info(self.current_frame, output)
+            # Add text overlay
+            cv2.putText(frame, "Press SPACE to capture, Q to quit",
+                       (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
-            cv2.imshow('Pokemon Perception Debug', self.current_frame)
-            
+            cv2.imshow('Reference Frame Capture', frame)
             key = cv2.waitKey(100) & 0xFF
             
-            if key == ord('q'):
+            if key == ord(' '):  # Space to capture
+                self.reference_frame = output.raw_frame.copy()
+                cv2.imwrite('reference_battle_screen.png', self.reference_frame)
+                print("✓ Captured reference frame")
+                print("  Saved as: reference_battle_screen.png")
                 break
-            elif key == ord('s'):
-                self._save_frame(output.raw_frame)
-            elif key == ord('c'):
-                self.regions = []
-                print("Cleared regions")
+            elif key == ord('q'):
+                cv2.destroyAllWindows()
+                return False
         
         cv2.destroyAllWindows()
-    
-    def _mouse_callback(self, event, x, y, flags, param):
-        """Handle mouse events for region selection"""
-        if event == cv2.EVENT_LBUTTONDOWN:
-            self.drawing = True
-            self.start_point = (x, y)
-        
-        elif event == cv2.EVENT_MOUSEMOVE:
-            if self.drawing and self.start_point:
-                # Draw temporary rectangle
-                pass
-        
-        elif event == cv2.EVENT_LBUTTONUP:
-            if self.drawing and self.start_point:
-                self.drawing = False
-                region = (
-                    min(self.start_point[0], x),
-                    min(self.start_point[1], y),
-                    abs(x - self.start_point[0]),
-                    abs(y - self.start_point[1])
-                )
-                self.regions.append(region)
-                print(f"Added region: {region}")
-                
-                # Test OCR on this region
-                if self.current_frame is not None:
-                    text = self.perception._ocr_region(self.current_frame, region)
-                    print(f"OCR Result: '{text}'")
-    
-    def _draw_debug_info(self, frame: np.ndarray, output):
-        """Draw debug overlays on frame"""
-        h, w = frame.shape[:2]
-        
-        # Draw game state
-        state_color = {
-            GameState.BATTLE: (0, 255, 0),
-            GameState.OVERWORLD: (255, 0, 0),
-            GameState.DIALOGUE: (0, 255, 255),
-            GameState.MENU: (255, 255, 0),
-            GameState.UNKNOWN: (128, 128, 128)
-        }
-        
-        color = state_color.get(output.game_state, (255, 255, 255))
-        cv2.putText(frame, f"State: {output.game_state.value}", 
-                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-        
-        # Draw battle info if available
-        if output.battle_state:
-            bs = output.battle_state
-            info_lines = [
-                f"Player: {bs.player_pokemon} Lv.{bs.player_level}",
-                f"HP: {bs.player_hp}/{bs.player_hp_max}",
-                f"Opponent: {bs.opponent_pokemon} Lv.{bs.opponent_level}",
-                f"Opp HP: {bs.opponent_hp_percent*100:.1f}%"
-            ]
-            
-            for i, line in enumerate(info_lines):
-                cv2.putText(frame, line, (10, 70 + i*30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-        
-        # Draw user-defined regions
-        for i, region in enumerate(self.regions):
-            x, y, rw, rh = region
-            cv2.rectangle(frame, (x, y), (x+rw, y+rh), (0, 255, 255), 2)
-            cv2.putText(frame, f"R{i}", (x, y-5),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-    
-    def _save_frame(self, frame: np.ndarray):
-        """Save frame with timestamp"""
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"pokemon_frame_{timestamp}.png"
-        cv2.imwrite(filename, frame)
-        print(f"Saved: {filename}")
-    
-    def test_ocr_accuracy(self):
-        """
-        Capture multiple frames and test OCR consistency
-        """
-        print("Testing OCR accuracy over 10 frames...")
-        results = []
-        
-        for i in range(10):
-            output = self.perception.perceive()
-            if output.battle_state:
-                results.append({
-                    'player': output.battle_state.player_pokemon,
-                    'opponent': output.battle_state.opponent_pokemon,
-                    'player_hp': output.battle_state.player_hp,
-                    'moves': output.battle_state.available_moves
-                })
-            time.sleep(0.5)
-        
-        print("\nOCR Consistency Report:")
-        if results:
-            print(f"Player Pokemon: {[r['player'] for r in results]}")
-            print(f"Opponent Pokemon: {[r['opponent'] for r in results]}")
-            print(f"Player HP: {[r['player_hp'] for r in results]}")
-        else:
-            print("No battle states detected")
+        return True
     
     def calibrate_regions(self):
-        """
-        Helper to find exact pixel coordinates for different UI elements
-        """
-        print("\nRegion Calibration Mode")
-        print("This will help you find exact coordinates for UI elements")
-        print("\n1. Battle - Player HP bar")
-        print("2. Battle - Opponent HP bar")
-        print("3. Battle - Move menu")
-        print("4. Battle - Pokemon names")
-        print("5. Overworld - Party menu")
+        """Interactive region calibration with keyboard controls"""
+        if self.reference_frame is None:
+            print("Error: No reference frame captured")
+            return
         
-        print("\nSwitch to melonDS and position it for a battle screen...")
-        input("Press Enter when ready...")
+        print("\n" + "="*60)
+        print("STEP 2: Calibrate Regions")
+        print("="*60)
+        print("\nKEYBOARD CONTROLS:")
+        print("  Arrow Keys    - Move box (in position mode)")
+        print("  Arrow Keys    - Resize box (in resize mode)")
+        print("  TAB           - Switch between position/resize mode")
+        print("  +/-           - Increase/decrease step size")
+        print("  ENTER         - Save region and move to next")
+        print("  T             - Test OCR on current box")
+        print("  S             - Skip current region")
+        print("  Q             - Quit calibration")
+        print("  R             - Reset current box")
+        print("\n")
         
-        output = self.perception.perceive()
-        frame = output.raw_frame
+        cv2.namedWindow('Region Calibration')
         
-        # Save reference frame
-        cv2.imwrite("reference_frame.png", frame)
-        print(f"Saved reference frame: {frame.shape}")
-        print(f"Frame size: {frame.shape[1]}x{frame.shape[0]}")
+        while self.current_region_idx < len(self.region_names):
+            region_name = self.region_names[self.current_region_idx]
+            
+            # Create display frame
+            display = self.reference_frame.copy()
+            self._draw_interface(display, region_name)
+            
+            cv2.imshow('Region Calibration', display)
+            key = cv2.waitKey(50) & 0xFF
+            
+            # Handle keypresses
+            if key == ord('q'):
+                break
+            elif key == 9:  # TAB
+                self.mode = 'resize' if self.mode == 'position' else 'position'
+            elif key == ord('+') or key == ord('='):
+                self.step_size = min(20, self.step_size + 1)
+            elif key == ord('-'):
+                self.step_size = max(1, self.step_size - 1)
+            elif key == 13:  # ENTER
+                self._save_current_region(region_name)
+            elif key == ord('s'):
+                print(f"Skipped: {region_name}")
+                self.current_region_idx += 1
+            elif key == ord('t'):
+                self._test_ocr()
+            elif key == ord('r'):
+                self._reset_box()
+            elif key == 82:  # Up arrow
+                self._handle_arrow('up')
+            elif key == 84:  # Down arrow
+                self._handle_arrow('down')
+            elif key == 81:  # Left arrow
+                self._handle_arrow('left')
+            elif key == 83:  # Right arrow
+                self._handle_arrow('right')
         
-        # Let user click to define regions
-        print("\nUse the interactive mode to draw regions")
-
-    def benchmark_performance(self):
-        """Test perception speed"""
-        print("Benchmarking perception performance...")
-        
-        iterations = 100
-        start_time = time.time()
-        
-        for _ in range(iterations):
-            output = self.perception.perceive()
-        
-        elapsed = time.time() - start_time
-        fps = iterations / elapsed
-        
-        print(f"\nPerformance:")
-        print(f"  Total time: {elapsed:.2f}s")
-        print(f"  FPS: {fps:.2f}")
-        print(f"  Per-frame: {elapsed/iterations*1000:.2f}ms")
-
-def main():
-    debugger = PerceptionDebugger()
+        cv2.destroyAllWindows()
+        self._save_calibration()
     
-    print("Pokemon Perception Debugger")
-    print("=" * 50)
-    print("Choose mode:")
-    print("1. Interactive capture (recommended)")
-    print("2. Test OCR accuracy")
-    print("3. Calibrate regions")
-    print("4. Benchmark performance")
+    def _draw_interface(self, frame, region_name):
+        """Draw the calibration interface"""
+        box = self.current_box
+        
+        # Draw current box
+        color = (0, 255, 255) if self.mode == 'position' else (255, 0, 255)
+        cv2.rectangle(frame, 
+                     (box['x'], box['y']),
+                     (box['x'] + box['width'], box['y'] + box['height']),
+                     color, 2)
+        
+        # Draw crosshair in center
+        center_x = box['x'] + box['width'] // 2
+        center_y = box['y'] + box['height'] // 2
+        cv2.drawMarker(frame, (center_x, center_y), color, 
+                      cv2.MARKER_CROSS, 20, 2)
+        
+        # Draw grid lines for alignment
+        h, w = frame.shape[:2]
+        for i in range(0, w, 50):
+            cv2.line(frame, (i, 0), (i, h), (50, 50, 50), 1)
+        for i in range(0, h, 50):
+            cv2.line(frame, (0, i), (w, i), (50, 50, 50), 1)
+        
+        # Info panel
+        info_bg = np.zeros((150, w, 3), dtype=np.uint8)
+        info_bg[:] = (40, 40, 40)
+        
+        y_offset = 25
+        cv2.putText(info_bg, f"Region: {region_name} ({self.current_region_idx + 1}/{len(self.region_names)})",
+                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        
+        y_offset += 25
+        mode_text = "POSITION MODE" if self.mode == 'position' else "RESIZE MODE"
+        mode_color = (0, 255, 255) if self.mode == 'position' else (255, 0, 255)
+        cv2.putText(info_bg, f"Mode: {mode_text} (TAB to switch)",
+                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, mode_color, 1)
+        
+        y_offset += 25
+        cv2.putText(info_bg, f"Box: x={box['x']}, y={box['y']}, w={box['width']}, h={box['height']}",
+                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        
+        y_offset += 25
+        cv2.putText(info_bg, f"Step size: {self.step_size} (use +/- to adjust)",
+                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        
+        y_offset += 25
+        cv2.putText(info_bg, "Press T to test OCR | ENTER to save | S to skip",
+                   (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        
+        # Combine
+        combined = np.vstack([frame, info_bg])
+        frame[:] = combined[:frame.shape[0], :]
     
-    choice = input("\nEnter choice (1-4): ").strip()
+    def _handle_arrow(self, direction):
+        """Handle arrow key presses"""
+        step = self.step_size
+        box = self.current_box
+        
+        if self.mode == 'position':
+            if direction == 'up':
+                box['y'] = max(0, box['y'] - step)
+            elif direction == 'down':
+                box['y'] = min(self.reference_frame.shape[0] - box['height'], box['y'] + step)
+            elif direction == 'left':
+                box['x'] = max(0, box['x'] - step)
+            elif direction == 'right':
+                box['x'] = min(self.reference_frame.shape[1] - box['width'], box['x'] + step)
+        else:  # resize mode
+            if direction == 'up':
+                box['height'] = max(10, box['height'] - step)
+            elif direction == 'down':
+                box['height'] = min(200, box['height'] + step)
+            elif direction == 'left':
+                box['width'] = max(10, box['width'] - step)
+            elif direction == 'right':
+                box['width'] = min(300, box['width'] + step)
     
-    if choice == '1':
-        debugger.run_interactive_capture()
-    elif choice == '2':
-        debugger.test_ocr_accuracy()
-    elif choice == '3':
-        debugger.calibrate_regions()
-    elif choice == '4':
-        debugger.benchmark_performance()
-    else:
-        print("Invalid choice")
+    def _test_ocr(self):
+        """Test OCR on current box with debug output"""
+        box = self.current_box
+        region = (box['x'], box['y'], box['width'], box['height'])
+        
+        print("\n" + "="*50)
+        print("OCR DEBUGGING")
+        print("="*50)
+        
+        # Extract region
+        x, y, w, h = region
+        roi = self.reference_frame[y:y+h, x:x+w]
+        
+        # Show original
+        cv2.imshow('Original ROI', cv2.resize(roi, None, fx=3, fy=3, interpolation=cv2.INTER_NEAREST))
+        
+        # Test with enhanced OCR
+        text = self.perception._ocr_region(self.reference_frame, region, debug=True)
+        
+        print(f"\nFinal Result: '{text}'")
+        
+        if not text.strip():
+            print("\n⚠ OCR Failed! Suggestions:")
+            print("  1. Make box tighter around text")
+            print("  2. Make box slightly larger to include more context")
+            print("  3. Check if text is clear in the reference frame")
+            print("  4. Consider using template matching instead")
+            print("  5. Increase melonDS window size for clearer text")
+        else:
+            print("\n✓ OCR Success!")
+        
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    
+    def _save_current_region(self, region_name):
+        """Save current region and move to next"""
+        box = self.current_box
+        region = (box['x'], box['y'], box['width'], box['height'])
+        
+        # Test OCR
+        text = self.perception._ocr_region(self.reference_frame, region)
+        
+        self.regions[region_name] = region
+        print(f"\n✓ Saved {region_name}: {region}")
+        print(f"  OCR Result: '{text}'")
+        
+        self.current_region_idx += 1
+        
+        # Suggest next position based on typical layout
+        self._smart_reposition()
+    
+    def _reset_box(self):
+        """Reset box to default position"""
+        self.current_box = {
+            'x': 100,
+            'y': 100,
+            'width': 100,
+            'height': 30
+        }
+        print("Box reset to default")
+    
+    def _smart_reposition(self):
+        """Intelligently reposition box for next region"""
+        region_name = self.region_names[self.current_region_idx - 1] if self.current_region_idx > 0 else None
+        
+        # Smart positioning based on what we just calibrated
+        if region_name == 'player_pokemon_name':
+            # Level is usually right next to name
+            self.current_box['x'] += self.current_box['width'] + 5
+            self.current_box['width'] = 40
+        elif region_name == 'player_level':
+            # HP is usually below
+            self.current_box['y'] += 20
+            self.current_box['width'] = 60
+        elif region_name == 'player_hp':
+            # Jump to opponent side (top-left)
+            self.current_box['x'] = 10
+            self.current_box['y'] = 30
+            self.current_box['width'] = 80
+        elif region_name == 'opponent_level':
+            # Move to moves (bottom screen area)
+            self.current_box['x'] = 10
+            self.current_box['y'] = self.reference_frame.shape[0] // 2 + 20
+            self.current_box['width'] = 100
+            self.current_box['height'] = 25
+    
+    def _save_calibration(self):
+        """Save calibration to JSON file"""
+        if not self.regions:
+            print("\nNo regions were saved")
+            return
+        
+        # Save as JSON
+        with open('calibration.json', 'w') as f:
+            json.dump(self.regions, f, indent=2)
+        
+        print("\n" + "="*60)
+        print("CALIBRATION COMPLETE!")
+        print("="*60)
+        print(f"\n✓ Saved {len(self.regions)} regions to calibration.json")
+        print("\nTo use these in your code:")
+        print("\n# Add to perception_module.py __init__:")
+        print("self.regions = {")
+        for name, region in self.regions.items():
+            print(f"    '{name}': {region},")
+        print("}")
+    
+    def run(self):
+        """Run the full calibration process"""
+        print("\n" + "="*60)
+        print("POKEMON PERCEPTION CALIBRATION TOOL")
+        print("="*60)
+        
+        # Step 1: Capture reference frame
+        if not self.capture_reference_frame():
+            return
+        
+        time.sleep(0.5)
+        
+        # Step 2: Calibrate regions
+        self.calibrate_regions()
 
 if __name__ == "__main__":
-    main()
+    calibrator = ImprovedCalibrator()
+    calibrator.run()
