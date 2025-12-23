@@ -1,0 +1,1 @@
+## TODO: slice window and compare tile types

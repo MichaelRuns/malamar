@@ -4,9 +4,13 @@ import time
 from typing import List, Optional
 from perception_boy import PerceptionModule
 
+"""
+note: gba tiles are 8px by 8px
+there are 20tiles in each direction
+"""
 # Initialize Pygame
 pygame.init()
-screen = pygame.display.set_mode((320, 288,))
+screen = pygame.display.set_mode((320, 290,))
 pygame.display.set_caption("Pokemon Blue - Raw Frame")
 clock = pygame.time.Clock()
 

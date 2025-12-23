@@ -30,15 +30,18 @@ def extract_font_templates(source_image_path, output_dir="assets/font/templates"
         os.mkdir(output_dir)
     img = Image.open(source_image_path).convert('L')
     grid = np.array(img)
-    start_y, start_x = 0, 0
-    row_height, col_width = 62, 62
+    start_y, start_x = 160, 64 # skip 5 row, skip 2 cols
+    row_height, col_width = 32, 32
     for row, row_str in enumerate(char_map):
-        slice_y = start_y + (row*row_height)
+        slice_y = start_y + (2*row*row_height)
+        row_slice = grid[slice_y:slice_y+row_height]
+        cv2.imshow(row_str, row_slice)
+        cv2.waitKey(1000)
         for col, char in enumerate(row_str):
-            slice_x = start_x + (col*col_width)
+            slice_x = start_x + (2*col*col_width)
             slice = grid[slice_y:slice_y+row_height, slice_x:slice_x+col_width]
             cv2.imshow(char, slice)
-            cv2.waitKey(100)
+            cv2.waitKey(200)
             image = Image.fromarray(slice)
             print(char)
             image.save(output_dir+"/"+char+".png")
