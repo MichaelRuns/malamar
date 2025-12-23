@@ -1,2 +1,4 @@
 *.gb
 *.gb.ram
+*.state
+*.pyc

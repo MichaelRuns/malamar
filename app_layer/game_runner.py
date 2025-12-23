@@ -2,15 +2,16 @@ import pygame
 from pyboy import PyBoy
 import time
 from typing import List, Optional
+from perception_boy import PerceptionModule
 
 # Initialize Pygame
 pygame.init()
-screen = pygame.display.set_mode((320, 288))
-pygame.display.set_caption("Pokemon Blue - AI Orchestrator")
+screen = pygame.display.set_mode((320, 288,))
+pygame.display.set_caption("Pokemon Blue - Raw Frame")
 clock = pygame.time.Clock()
 
 # Initialize PyBoy in headless mode
-pyboy = PyBoy('pokemon_blue.gb', window="null")
+pyboy = PyBoy('assets/game_files/pokemon_blue.gb', window="null")
 pyboy.set_emulation_speed(0)
 
 
@@ -20,6 +21,7 @@ class GameOrchestrator:
     def __init__(self):
         self.frame_count = 0
         self.action_queue = []
+        self.perception = PerceptionModule(False)
     
     def get_actions(self, frame) -> List[str]:
         """
@@ -29,7 +31,7 @@ class GameOrchestrator:
         Replace this logic with your AI/LLM calls.
         """
         self.frame_count += 1
-        
+        state = self.perception.perceive(frame)
         # Example: Simple pattern - press buttons every N frames
         # Replace this with actual AI logic
         if self.frame_count % 120 == 0:
@@ -66,6 +68,19 @@ def render_frame():
     screen.blit(scaled, (0, 0))
     pygame.display.flip()
 
+def save_game():
+        # todo: support file choice
+        with open("assets/game_files/game_save.state", "wb") as f:
+            pyboy.save_state(f)
+            print("game saved!!")
+
+def load_game():
+    # todo: support file choice
+    with open("assets/game_files/game_save.state", "rb") as f:
+        pyboy.load_state(f)
+        print('game loaded from file. Enjoy!')
+
+
 
 # Initialize orchestrator
 orchestrator = GameOrchestrator()
@@ -92,6 +107,8 @@ while running:
                 elif event.key == pygame.K_DOWN: pyboy.button_press('down')
                 elif event.key == pygame.K_LEFT: pyboy.button_press('left')
                 elif event.key == pygame.K_RIGHT: pyboy.button_press('right')
+                elif event.key == pygame.K_s: save_game()
+                elif event.key == pygame.K_l: load_game()
         elif event.type == pygame.KEYUP and manual_mode:
             if event.key == pygame.K_z: pyboy.button_release('a')
             elif event.key == pygame.K_x: pyboy.button_release('b')

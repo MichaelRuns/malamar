@@ -80,7 +80,7 @@ class PerceptionModule:
         
     def perceive(self, frame: Image.Image) -> PerceptionState:
         """Main perception pipeline"""
-        
+        frame = frame.convert("L")
         # Layer 1: Fast heuristics
         game_state = self._detect_game_state(frame)
         text_visible = self._detect_text_box(frame)
@@ -293,13 +293,13 @@ class PerceptionModule:
         # Enemy HP bar around y=40-50, x=100-150
         enemy_hp_region = arr[40:50, 100:150]
         has_green_bar = self._has_color_in_region(enemy_hp_region, 
-                                                   target_color=[0, 200, 0], 
+                                                   target_color=200, 
                                                    tolerance=50)
         
         # Player HP bar around y=110-120, x=50-100
         player_hp_region = arr[110:120, 50:100]
         has_player_bar = self._has_color_in_region(player_hp_region,
-                                                     target_color=[0, 200, 0],
+                                                     target_color=200,
                                                      tolerance=50)
         
         return has_green_bar or has_player_bar
@@ -333,13 +333,13 @@ class PerceptionModule:
         return self._has_menu_ui(np.array(frame))
     
     def _has_color_in_region(self, region: np.ndarray, 
-                            target_color: List[int], 
+                            target_color: int, 
                             tolerance: int) -> bool:
         """Check if target color exists in region"""
         if region.size == 0:
             return False
-        
-        target = np.array(target_color)
+        region_shape = np.shape(region)
+        target = np.array([[target_color for row in range(region_shape[1])]for col in range(region_shape[0])])
         distances = np.abs(region - target).sum(axis=-1)
         return np.any(distances < tolerance)
     
@@ -413,13 +413,13 @@ class PerceptionModule:
         arr = np.array(frame)
         
         # Detect player position (center of screen usually)
-        player_pos = self._detect_player_position(arr)
+        player_pos = 'unknown'
         
         # Detect facing direction from sprite
-        facing = self._detect_player_direction(arr)
+        facing = 'unknown'
         
         # Detect grass tiles (green pattern)
-        in_grass = self._detect_grass(arr)
+        in_grass = False
         
         return OverworldPerception(
             player_position=player_pos,
@@ -429,31 +429,6 @@ class PerceptionModule:
             in_grass=in_grass,
             can_interact=False   # Could check for nearby NPCs/signs
         )
-    
-    def _detect_player_position(self, arr: np.ndarray) -> Tuple[int, int]:
-        """Estimate player tile position"""
-        # Player is typically centered on screen
-        # GB screen is 160x144, tiles are 8x8
-        center_tile = (160 // 16, 144 // 16)
-        return center_tile
-    
-    def _detect_player_direction(self, arr: np.ndarray) -> str:
-        """Detect which way player sprite is facing"""
-        # This is tricky - would need sprite recognition
-        # For now, return unknown
-        return "unknown"
-    
-    def _detect_grass(self, arr: np.ndarray) -> bool:
-        """Detect if player is in tall grass"""
-        # Grass has distinctive pattern - green with darker spots
-        center_region = arr[60:80, 70:90]
-        
-        # Look for green colors
-        green_mask = (center_region[:, :, 1] > 100) & \
-                     (center_region[:, :, 0] < 100)
-        
-        green_ratio = np.sum(green_mask) / green_mask.size
-        return green_ratio > 0.3
     
     # ===== LAYER 3: LLM PERCEPTION =====
     
@@ -490,28 +465,3 @@ class PerceptionModule:
         # If last 50 frames are very similar, probably stuck
         unique_frames = len(set(self.previous_frames[-50:]))
         return unique_frames < 5
-
-
-# ===== USAGE EXAMPLE =====
-
-if __name__ == "__main__":
-    # Example usage
-    perception = PerceptionModule(use_llm=False)
-    
-    # Dummy frame
-    dummy_frame = Image.new('RGB', (160, 144), color='white')
-    
-    state = perception.perceive(dummy_frame)
-    
-    print(f"Game State: {state.game_state}")
-    print(f"Text Visible: {state.text_visible}")
-    print(f"Menu Open: {state.menu_open}")
-    print(f"Dialog Text: {state.text.dialog_text}")
-    print(f"Menu Items: {state.text.menu_items}")
-    
-    if state.battle:
-        print(f"\n=== BATTLE INFO ===")
-        print(f"Player: {state.battle.player_pokemon} (HP: {state.battle.player_hp_percent:.2%})")
-        print(f"Enemy: {state.battle.enemy_pokemon} (HP: {state.battle.enemy_hp_percent:.2%})")
-        print(f"Moves: {state.battle.available_moves}")
-        print(f"Battle Text: {state.battle.battle_text}")
