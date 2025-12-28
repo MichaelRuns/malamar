@@ -90,7 +90,7 @@ def load_game():
 orchestrator = GameOrchestrator()
 
 running = True
-manual_mode = False  # Toggle with 'M' key
+manual_mode = True  # Toggle with 'M' key
 
 while running:
     # Handle Pygame events
