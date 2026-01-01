@@ -2,6 +2,7 @@ import pygame
 from pyboy import PyBoy
 import time
 import numpy as np
+import subprocess
 from typing import List, Optional
 from perception_v2 import PerceptionV2, TileLabeller
 from visualizer_v2 import VisualizerV2
@@ -25,7 +26,7 @@ Controls:
 - T: Toggle label grid panel (when visualizer is on)
 - S: Save game state
 - L: Load game state
-- P: Take screenshot for tile labeling (manual mode only)
+- P: Take screenshot and open tile labeler (manual mode only)
 - Arrow keys: Movement
 - Z: A button
 - X: B button
@@ -265,7 +266,15 @@ while running:
                 elif event.key == pygame.K_RIGHT: pyboy.button_press('right')
                 elif event.key == pygame.K_s: save_game()
                 elif event.key == pygame.K_l: load_game()
-                elif event.key == pygame.K_p: save_screenshot(current_frame, orchestrator.current_state)
+                elif event.key == pygame.K_p:
+                    filepath = save_screenshot(current_frame, orchestrator.current_state)
+                    if filepath:
+                        # Launch tile labeler in background
+                        print(f"🏷️  Opening tile labeler for {filepath}")
+                        subprocess.Popen([
+                            "python", "tools/tile_labeller_interactive.py",
+                            filepath, "--labels", "tile_labels.json"
+                        ], cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         elif event.type == pygame.KEYUP and manual_mode:
             if event.key == pygame.K_z: pyboy.button_release('a')
             elif event.key == pygame.K_x: pyboy.button_release('b')

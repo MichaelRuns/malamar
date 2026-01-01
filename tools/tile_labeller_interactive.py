@@ -273,21 +273,24 @@ class InteractiveTileLabeller:
 
         scaled_tile = TILE_SIZE * self.visualizer.scale
 
-        # Iterate through all tiles
+        # Create ONE overlay for all labeled tiles (O(1) copies instead of O(n))
+        overlay = canvas.copy()
+        has_labels = False
+
         for row in range(GRID_ROWS):
             for col in range(GRID_COLS):
                 tile = self.state.get_tile(row, col)
                 if tile and tile.label:
-                    # This tile has a label, highlight it
+                    has_labels = True
                     x1 = x_offset + col * scaled_tile
                     y1 = y_offset + row * scaled_tile
                     x2 = x1 + scaled_tile
                     y2 = y1 + scaled_tile
-
-                    # Draw faint green overlay
-                    overlay = canvas.copy()
                     cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 255, 0), -1)
-                    cv2.addWeighted(overlay, 0.15, canvas, 0.85, 0, canvas)
+
+        # Blend ONCE at the end
+        if has_labels:
+            cv2.addWeighted(overlay, 0.15, canvas, 0.85, 0, canvas)
 
     def _draw_regions(self, canvas, x_offset, y_offset):
         """Draw regions of interest"""

@@ -99,7 +99,14 @@
     "18fac2d3": "terrain_blocked",
     "dd614e81": "terrain_blocked",
     "8894e61f": "terrain_door",
-    "847bcdb9": "terrain_door"
+    "847bcdb9": "terrain_door",
+    "308f66de": "ui_cursor",
+    "048fae1f": "char_2",
+    "fb15861e": "char_/",
+    "88581bd5": "char_L",
+    "8c312f53": "char_6",
+    "6c9897ef": "char_3",
+    "500c5177": "ui_hp_bar"
   },
   "hash_to_type": {
     "39f46abe": "text",
@@ -201,6 +208,13 @@
     "18fac2d3": "terrain",
     "dd614e81": "terrain",
     "8894e61f": "terrain",
-    "847bcdb9": "terrain"
+    "847bcdb9": "terrain",
+    "308f66de": "ui",
+    "048fae1f": "text",
+    "fb15861e": "text",
+    "88581bd5": "text",
+    "8c312f53": "text",
+    "6c9897ef": "text",
+    "500c5177": "ui"
   }
 }
