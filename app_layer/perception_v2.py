@@ -35,6 +35,54 @@ class TileInfo:
 
 
 @dataclass
+class WordInfo:
+    """Represents an extracted word with position"""
+    word: str
+    start_row: int
+    start_col: int
+    end_col: int
+
+
+@dataclass
+class MenuSelection:
+    """Represents the currently selected menu option"""
+    option: Optional[str]  # "FIGHT", "PKMN", "ITEM", "RUN"
+    cursor_position: Optional[Tuple[int, int]]  # (row, col)
+    menu_type: Optional[str]  # "battle_menu" or None
+
+
+@dataclass
+class HPReading:
+    """HP bar reading for a combatant"""
+    percentage: Optional[float]  # 0.0 to 1.0
+    hp_bar_tiles: int
+    total_tiles: int
+
+
+@dataclass
+class BattleHP:
+    """HP readings for both combatants"""
+    player: 'HPReading'
+    enemy: 'HPReading'
+
+
+@dataclass
+class BattleNames:
+    """Pokemon names in battle"""
+    enemy_name: Optional[str]
+    player_name: Optional[str]
+
+
+@dataclass
+class LabeledTileGroups:
+    """Tiles grouped by category"""
+    text: List['TileInfo']
+    terrain: List['TileInfo']
+    ui: List['TileInfo']
+    unlabeled: List['TileInfo']
+
+
+@dataclass
 class RegionOfInterest:
     """Defines a region of interest on the screen"""
     name: str
@@ -88,6 +136,26 @@ REGIONS_OF_INTEREST = {
         tile_end=(16, 18),
         description="Battle menu options"
     ),
+    "enemy_name": RegionOfInterest(
+        name="enemy_name",
+        tile_start=(0, 0),
+        tile_end=(1, 7),
+        description="Enemy Pokemon name in battle"
+    ),
+    "player_name": RegionOfInterest(
+        name="player_name",
+        tile_start=(7, 10),
+        tile_end=(8, 19),
+        description="Player Pokemon name in battle"
+    ),
+}
+
+# Battle menu option positions (2x2 grid)
+BATTLE_MENU_OPTIONS = {
+    "FIGHT": {"row_range": (13, 14), "col_range": (10, 13)},
+    "PKMN":  {"row_range": (13, 14), "col_range": (15, 18)},
+    "ITEM":  {"row_range": (15, 16), "col_range": (10, 13)},
+    "RUN":   {"row_range": (15, 16), "col_range": (15, 18)},
 }
 
 
@@ -237,6 +305,213 @@ class PerceptionState:
                 tiles_in_region.append(tile)
 
         return tiles_in_region
+
+    def get_labeled_tiles_by_category(self) -> LabeledTileGroups:
+        """
+        Group all tiles by their label category.
+
+        Returns:
+            LabeledTileGroups with tiles organized by type (text/terrain/ui/unlabeled)
+        """
+        text_tiles = []
+        terrain_tiles = []
+        ui_tiles = []
+        unlabeled_tiles = []
+
+        for tile in self.tiles:
+            if tile.tile_type == "text":
+                text_tiles.append(tile)
+            elif tile.tile_type == "terrain":
+                terrain_tiles.append(tile)
+            elif tile.tile_type == "ui":
+                ui_tiles.append(tile)
+            else:
+                unlabeled_tiles.append(tile)
+
+        return LabeledTileGroups(
+            text=text_tiles,
+            terrain=terrain_tiles,
+            ui=ui_tiles,
+            unlabeled=unlabeled_tiles
+        )
+
+    def extract_words(self, region_name: Optional[str] = None) -> List[WordInfo]:
+        """
+        Extract words from char_* labeled tiles.
+
+        Args:
+            region_name: Optional region to limit extraction to (e.g., "text_box")
+
+        Returns:
+            List of WordInfo objects with extracted words and positions
+        """
+        # Get tiles (filtered by region if specified)
+        if region_name:
+            tiles = self.get_tiles_in_region(region_name)
+        else:
+            tiles = self.tiles
+
+        # Group tiles by row
+        rows: Dict[int, List[TileInfo]] = {}
+        for tile in tiles:
+            if tile.row not in rows:
+                rows[tile.row] = []
+            rows[tile.row].append(tile)
+
+        # Sort each row by column
+        for row in rows.values():
+            row.sort(key=lambda t: t.col)
+
+        words = []
+
+        # Process each row
+        for row_num in sorted(rows.keys()):
+            row_tiles = rows[row_num]
+
+            current_word = ""
+            word_start_col = None
+            last_col = None
+
+            for tile in row_tiles:
+                # Check if this is a character tile
+                if tile.label and tile.label.startswith("char_"):
+                    char = tile.label[5:]
+
+                    # Handle space as word boundary
+                    if char == "SPACE":
+                        if current_word:
+                            words.append(WordInfo(
+                                word=current_word,
+                                start_row=row_num,
+                                start_col=word_start_col,
+                                end_col=last_col
+                            ))
+                            current_word = ""
+                            word_start_col = None
+                    else:
+                        # Check for gap (non-consecutive columns)
+                        if last_col is not None and tile.col > last_col + 1:
+                            # Gap detected - end current word
+                            if current_word:
+                                words.append(WordInfo(
+                                    word=current_word,
+                                    start_row=row_num,
+                                    start_col=word_start_col,
+                                    end_col=last_col
+                                ))
+                                current_word = ""
+                                word_start_col = None
+
+                        # Start new word or continue current
+                        if word_start_col is None:
+                            word_start_col = tile.col
+                        current_word += char
+                        last_col = tile.col
+                else:
+                    # Non-character tile - end current word
+                    if current_word:
+                        words.append(WordInfo(
+                            word=current_word,
+                            start_row=row_num,
+                            start_col=word_start_col,
+                            end_col=last_col
+                        ))
+                        current_word = ""
+                        word_start_col = None
+                    last_col = tile.col
+
+            # Don't forget the last word in the row
+            if current_word:
+                words.append(WordInfo(
+                    word=current_word,
+                    start_row=row_num,
+                    start_col=word_start_col,
+                    end_col=last_col
+                ))
+
+        return words
+
+    def get_menu_selection(self) -> MenuSelection:
+        """
+        Detect which menu option is currently selected based on cursor position.
+
+        Returns:
+            MenuSelection with detected option and cursor position
+        """
+        # Find cursor tile
+        cursor_tile = None
+        for tile in self.tiles:
+            if tile.label == "ui_cursor":
+                cursor_tile = tile
+                break
+
+        if cursor_tile is None:
+            return MenuSelection(option=None, cursor_position=None, menu_type=None)
+
+        cursor_pos = (cursor_tile.row, cursor_tile.col)
+
+        # Check if cursor is in battle_menu region
+        battle_menu = self.regions.get("battle_menu")
+        if battle_menu and battle_menu.contains_tile(cursor_tile.row, cursor_tile.col):
+            # Map cursor position to menu option
+            for option_name, bounds in BATTLE_MENU_OPTIONS.items():
+                row_min, row_max = bounds["row_range"]
+                col_min, col_max = bounds["col_range"]
+                if (row_min <= cursor_tile.row <= row_max and
+                    col_min <= cursor_tile.col <= col_max):
+                    return MenuSelection(
+                        option=option_name,
+                        cursor_position=cursor_pos,
+                        menu_type="battle_menu"
+                    )
+
+            # Cursor in battle_menu but not matching any option
+            return MenuSelection(
+                option=None,
+                cursor_position=cursor_pos,
+                menu_type="battle_menu"
+            )
+
+        # Cursor found but not in battle_menu
+        return MenuSelection(option=None, cursor_position=cursor_pos, menu_type=None)
+
+    def get_battle_hp(self) -> BattleHP:
+        """
+        Read HP bar status for player and enemy Pokemon.
+
+        Returns:
+            BattleHP with player and enemy HP readings
+        """
+        def read_hp_region(region_name: str) -> HPReading:
+            tiles = self.get_tiles_in_region(region_name)
+            total = len(tiles)
+            hp_tiles = sum(1 for t in tiles if t.label == "ui_hp_bar")
+            percentage = hp_tiles / total if total > 0 else None
+            return HPReading(
+                percentage=percentage,
+                hp_bar_tiles=hp_tiles,
+                total_tiles=total
+            )
+
+        return BattleHP(
+            player=read_hp_region("player_hp"),
+            enemy=read_hp_region("enemy_hp")
+        )
+
+    def get_battle_names(self) -> BattleNames:
+        """
+        Extract Pokemon names from battle screen regions.
+
+        Returns:
+            BattleNames with enemy and player Pokemon names
+        """
+        enemy_words = self.extract_words("enemy_name")
+        player_words = self.extract_words("player_name")
+
+        enemy_name = enemy_words[0].word if enemy_words else None
+        player_name = player_words[0].word if player_words else None
+
+        return BattleNames(enemy_name=enemy_name, player_name=player_name)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization"""

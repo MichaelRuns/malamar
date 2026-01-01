@@ -24,6 +24,7 @@ Controls:
 - G: Toggle grid overlay (when visualizer is on)
 - R: Toggle regions overlay (when visualizer is on)
 - T: Toggle label grid panel (when visualizer is on)
+- I: Toggle state info panel (when visualizer is on)
 - S: Save game state
 - L: Load game state
 - P: Take screenshot and open tile labeler (manual mode only)
@@ -87,6 +88,8 @@ class GameOrchestrator:
                 self.visualizer.toggle_regions()
             elif key == ord('t'):
                 self.visualizer.toggle_label_grid()
+            elif key == ord('i'):
+                self.visualizer.toggle_state_panel()
 
         # Get JSON representation for LLM
         state_json = state.to_json()

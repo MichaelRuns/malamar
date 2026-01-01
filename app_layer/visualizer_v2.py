@@ -5,8 +5,11 @@ Shows raw frame with grid overlay, alphabetic/numeric labels, and regions of int
 
 import cv2
 import numpy as np
-from typing import Optional
-from perception_v2 import PerceptionState, GRID_ROWS, GRID_COLS, TILE_SIZE, REGIONS_OF_INTEREST
+from typing import Optional, List
+from perception_v2 import (
+    PerceptionState, GRID_ROWS, GRID_COLS, TILE_SIZE, REGIONS_OF_INTEREST,
+    WordInfo, MenuSelection, BattleHP, BattleNames
+)
 
 
 class VisualizerV2:
@@ -25,16 +28,21 @@ class VisualizerV2:
         self.label_grid_width = GRID_COLS * self.label_grid_char_width + 20  # 20 cols + padding
         self.label_grid_height = GRID_ROWS * self.label_grid_char_height + 40  # 18 rows + header
 
-        # Total canvas size (frame + gap + label grid)
-        self.gap = 20  # Gap between frame and label grid
-        self.canvas_width = self.display_width + self.label_margin * 2 + self.gap + self.label_grid_width
-        self.canvas_height = max(self.display_height + self.label_margin * 2, self.label_grid_height + self.label_margin)
+        # State info panel settings
+        self.state_panel_width = 280
+        self.state_panel_height = 320
+
+        # Total canvas size (frame + gap + label grid + state panel)
+        self.gap = 20  # Gap between panels
+        self.canvas_width = self.display_width + self.label_margin * 2 + self.gap + self.label_grid_width + self.gap + self.state_panel_width
+        self.canvas_height = max(self.display_height + self.label_margin * 2, self.label_grid_height + self.label_margin, self.state_panel_height + self.label_margin)
 
         self.created = False
         self.show_grid = True
         self.show_labels = True
         self.show_regions = True
         self.show_label_grid = True  # Toggle for label grid panel
+        self.show_state_panel = True  # Toggle for state info panel
 
     def visualize(self, frame: np.ndarray, state: Optional[PerceptionState] = None):
         """
@@ -86,6 +94,11 @@ class VisualizerV2:
         if self.show_label_grid and state:
             label_grid_x = self.display_width + self.label_margin * 2 + self.gap
             self._draw_label_grid_panel(canvas, label_grid_x, self.label_margin, state)
+
+        # Draw state info panel
+        if self.show_state_panel and state:
+            state_panel_x = self.display_width + self.label_margin * 2 + self.gap + self.label_grid_width + self.gap
+            self._draw_state_panel(canvas, state_panel_x, self.label_margin, state)
 
         # Display
         cv2.imshow(self.window_name, canvas)
@@ -202,7 +215,7 @@ class VisualizerV2:
 
         # Draw controls at bottom
         controls = [
-            "G: Grid | R: Regions | T: Label Grid | Q: Quit"
+            "G: Grid | R: Regions | T: Labels | I: State | Q: Quit"
         ]
         y = self.canvas_height - 10
         for line in controls:
@@ -270,6 +283,134 @@ class VisualizerV2:
                        font, 0.3, (120, 120, 120), 1)
             char_y += self.label_grid_char_height
 
+    def _draw_state_panel(self, canvas: np.ndarray, x_offset: int, y_offset: int,
+                          state: PerceptionState):
+        """Draw the perception state info panel"""
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.4
+        thickness = 1
+
+        # Draw panel background
+        panel_width = self.state_panel_width
+        panel_height = self.state_panel_height
+        cv2.rectangle(canvas, (x_offset, y_offset),
+                     (x_offset + panel_width, y_offset + panel_height),
+                     (30, 30, 40), -1)  # Dark blue-gray background
+        cv2.rectangle(canvas, (x_offset, y_offset),
+                     (x_offset + panel_width, y_offset + panel_height),
+                     (100, 100, 120), 1)  # Border
+
+        # Draw header
+        cv2.putText(canvas, "Perception State", (x_offset + 5, y_offset + 18),
+                   font, 0.5, (255, 255, 255), 1)
+
+        y = y_offset + 40
+        line_height = 16
+
+        # --- Menu Selection ---
+        cv2.putText(canvas, "MENU:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
+        y += line_height
+
+        menu = state.get_menu_selection()
+        if menu.option:
+            color = (0, 255, 0)  # Green for active selection
+            cv2.putText(canvas, f"  > {menu.option}", (x_offset + 5, y), font, font_scale, color, thickness)
+        elif menu.cursor_position:
+            cv2.putText(canvas, f"  Cursor at {menu.cursor_position}", (x_offset + 5, y), font, font_scale, (180, 180, 180), thickness)
+        else:
+            cv2.putText(canvas, "  (no cursor)", (x_offset + 5, y), font, font_scale, (100, 100, 100), thickness)
+        y += line_height + 8
+
+        # --- Battle HP ---
+        cv2.putText(canvas, "HP BARS:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
+        y += line_height
+
+        hp = state.get_battle_hp()
+
+        # Enemy HP
+        enemy_pct = hp.enemy.percentage
+        if enemy_pct is not None and hp.enemy.hp_bar_tiles > 0:
+            bar_width = 100
+            filled = int(bar_width * enemy_pct)
+            cv2.putText(canvas, "  Enemy:", (x_offset + 5, y), font, font_scale, (255, 150, 100), thickness)
+            bar_x = x_offset + 70
+            cv2.rectangle(canvas, (bar_x, y - 10), (bar_x + bar_width, y), (60, 60, 60), -1)
+            if filled > 0:
+                cv2.rectangle(canvas, (bar_x, y - 10), (bar_x + filled, y), (0, 200, 0), -1)
+            cv2.putText(canvas, f"{int(enemy_pct * 100)}%", (bar_x + bar_width + 5, y), font, font_scale, (200, 200, 200), thickness)
+        else:
+            cv2.putText(canvas, "  Enemy: --", (x_offset + 5, y), font, font_scale, (100, 100, 100), thickness)
+        y += line_height
+
+        # Player HP
+        player_pct = hp.player.percentage
+        if player_pct is not None and hp.player.hp_bar_tiles > 0:
+            bar_width = 100
+            filled = int(bar_width * player_pct)
+            cv2.putText(canvas, "  Player:", (x_offset + 5, y), font, font_scale, (100, 150, 255), thickness)
+            bar_x = x_offset + 70
+            cv2.rectangle(canvas, (bar_x, y - 10), (bar_x + bar_width, y), (60, 60, 60), -1)
+            if filled > 0:
+                cv2.rectangle(canvas, (bar_x, y - 10), (bar_x + filled, y), (0, 200, 0), -1)
+            cv2.putText(canvas, f"{int(player_pct * 100)}%", (bar_x + bar_width + 5, y), font, font_scale, (200, 200, 200), thickness)
+        else:
+            cv2.putText(canvas, "  Player: --", (x_offset + 5, y), font, font_scale, (100, 100, 100), thickness)
+        y += line_height + 8
+
+        # --- Battle Names ---
+        cv2.putText(canvas, "POKEMON:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
+        y += line_height
+
+        names = state.get_battle_names()
+        if names.enemy_name:
+            cv2.putText(canvas, f"  Enemy: {names.enemy_name}", (x_offset + 5, y), font, font_scale, (255, 150, 100), thickness)
+        else:
+            cv2.putText(canvas, "  Enemy: --", (x_offset + 5, y), font, font_scale, (100, 100, 100), thickness)
+        y += line_height
+
+        if names.player_name:
+            cv2.putText(canvas, f"  Player: {names.player_name}", (x_offset + 5, y), font, font_scale, (100, 150, 255), thickness)
+        else:
+            cv2.putText(canvas, "  Player: --", (x_offset + 5, y), font, font_scale, (100, 100, 100), thickness)
+        y += line_height + 8
+
+        # --- Extracted Words ---
+        cv2.putText(canvas, "WORDS:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
+        y += line_height
+
+        words = state.extract_words()
+        if words:
+            # Show up to 8 words
+            word_strs = [w.word for w in words[:8]]
+            # Wrap words into lines
+            line = "  "
+            for w in word_strs:
+                if len(line) + len(w) + 1 > 35:
+                    cv2.putText(canvas, line, (x_offset + 5, y), font, font_scale, (255, 255, 100), thickness)
+                    y += line_height
+                    line = "  " + w + " "
+                else:
+                    line += w + " "
+            if line.strip():
+                cv2.putText(canvas, line, (x_offset + 5, y), font, font_scale, (255, 255, 100), thickness)
+                y += line_height
+            if len(words) > 8:
+                cv2.putText(canvas, f"  (+{len(words) - 8} more)", (x_offset + 5, y), font, font_scale, (120, 120, 120), thickness)
+        else:
+            cv2.putText(canvas, "  (none)", (x_offset + 5, y), font, font_scale, (100, 100, 100), thickness)
+        y += line_height + 8
+
+        # --- Tile Counts ---
+        cv2.putText(canvas, "TILES:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
+        y += line_height
+
+        groups = state.get_labeled_tiles_by_category()
+        cv2.putText(canvas, f"  Text: {len(groups.text)}", (x_offset + 5, y), font, font_scale, (255, 255, 100), thickness)
+        cv2.putText(canvas, f"Terrain: {len(groups.terrain)}", (x_offset + 90, y), font, font_scale, (100, 200, 100), thickness)
+        y += line_height
+        cv2.putText(canvas, f"  UI: {len(groups.ui)}", (x_offset + 5, y), font, font_scale, (100, 150, 255), thickness)
+        cv2.putText(canvas, f"Unlabeled: {len(groups.unlabeled)}", (x_offset + 90, y), font, font_scale, (100, 100, 100), thickness)
+
     def toggle_grid(self):
         """Toggle grid visibility"""
         self.show_grid = not self.show_grid
@@ -289,6 +430,11 @@ class VisualizerV2:
         """Toggle label grid panel visibility"""
         self.show_label_grid = not self.show_label_grid
         return self.show_label_grid
+
+    def toggle_state_panel(self):
+        """Toggle state info panel visibility"""
+        self.show_state_panel = not self.show_state_panel
+        return self.show_state_panel
 
     def close(self):
         """Close the visualization window"""
