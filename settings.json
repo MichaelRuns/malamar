@@ -1,0 +1,45 @@
+{
+  "agent": {
+    "enabled": false,
+    "model": "llama3.2:3b",
+    "ollama_url": "http://localhost:11434",
+    "timeout": 30,
+
+    "timing": {
+      "decision_interval_seconds": 7,
+      "button_delay_seconds": 1.0,
+      "action_hold_frames": 5
+    },
+
+    "roles": {
+      "planner": {
+        "enabled": true,
+        "replan_interval_seconds": 30,
+        "max_plan_steps": 10
+      },
+      "executor": {
+        "enabled": true,
+        "max_actions_per_decision": 15
+      }
+    },
+
+    "context": {
+      "max_history_exchanges": 6,
+      "compact_after_exchanges": 20
+    }
+  },
+
+  "visualization": {
+    "enabled": true,
+    "show_grid": true,
+    "show_regions": true,
+    "show_label_grid": true,
+    "show_state_panel": true,
+    "show_agent_panel": true
+  },
+
+  "game": {
+    "emulation_speed": 0,
+    "target_fps": 60
+  }
+}

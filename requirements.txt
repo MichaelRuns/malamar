@@ -1,0 +1,19 @@
+# Malamar - Pokemon Blue AI Agent
+# Core dependencies
+
+# Game emulation
+pyboy>=2.0.0
+
+# Image processing & visualization
+numpy>=1.24.0
+opencv-python>=4.8.0
+Pillow>=10.0.0
+
+# Game display
+pygame>=2.5.0
+
+# Tile hashing
+xxhash>=3.4.0
+
+# HTTP client for Ollama API
+requests>=2.28.0

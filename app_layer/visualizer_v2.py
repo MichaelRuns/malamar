@@ -1,11 +1,12 @@
 """
 Enhanced visualizer for tile-based perception
-Shows raw frame with grid overlay, alphabetic/numeric labels, and regions of interest
+Shows raw frame with grid overlay, alphabetic/numeric labels, regions of interest,
+and AI agent status panel
 """
 
 import cv2
 import numpy as np
-from typing import Optional, List
+from typing import Optional, List, Dict
 from perception_v2 import (
     PerceptionState, GRID_ROWS, GRID_COLS, TILE_SIZE, REGIONS_OF_INTEREST,
     WordInfo, MenuSelection, BattleHP, BattleNames
@@ -32,10 +33,20 @@ class VisualizerV2:
         self.state_panel_width = 280
         self.state_panel_height = 320
 
-        # Total canvas size (frame + gap + label grid + state panel)
+        # Agent panel settings
+        self.agent_panel_width = 320
+        self.agent_panel_height = 400
+
+        # Total canvas size (frame + gap + label grid + state panel + agent panel)
         self.gap = 20  # Gap between panels
-        self.canvas_width = self.display_width + self.label_margin * 2 + self.gap + self.label_grid_width + self.gap + self.state_panel_width
-        self.canvas_height = max(self.display_height + self.label_margin * 2, self.label_grid_height + self.label_margin, self.state_panel_height + self.label_margin)
+        self.canvas_width = (self.display_width + self.label_margin * 2 +
+                            self.gap + self.label_grid_width +
+                            self.gap + self.state_panel_width +
+                            self.gap + self.agent_panel_width)
+        self.canvas_height = max(self.display_height + self.label_margin * 2,
+                                self.label_grid_height + self.label_margin,
+                                self.state_panel_height + self.label_margin,
+                                self.agent_panel_height + self.label_margin)
 
         self.created = False
         self.show_grid = True
@@ -43,6 +54,7 @@ class VisualizerV2:
         self.show_regions = True
         self.show_label_grid = True  # Toggle for label grid panel
         self.show_state_panel = True  # Toggle for state info panel
+        self.show_agent_panel = True  # Toggle for agent panel
 
         # Cache for expensive state panel computations
         self._state_cache_hash = None
@@ -52,13 +64,15 @@ class VisualizerV2:
         self._cached_words = None
         self._cached_groups = None
 
-    def visualize(self, frame: np.ndarray, state: Optional[PerceptionState] = None):
+    def visualize(self, frame: np.ndarray, state: Optional[PerceptionState] = None,
+                  agent_status: Optional[Dict] = None):
         """
         Visualize frame with tile grid overlay
 
         Args:
             frame: Grayscale frame (144x160)
             state: Optional PerceptionState for enhanced visualization
+            agent_status: Optional dict with agent status for display
         """
         # Create canvas with margins for labels
         canvas = np.zeros((self.canvas_height, self.canvas_width, 3), dtype=np.uint8)
@@ -107,6 +121,13 @@ class VisualizerV2:
         if self.show_state_panel and state:
             state_panel_x = self.display_width + self.label_margin * 2 + self.gap + self.label_grid_width + self.gap
             self._draw_state_panel(canvas, state_panel_x, self.label_margin, state)
+
+        # Draw agent panel
+        if self.show_agent_panel:
+            agent_panel_x = (self.display_width + self.label_margin * 2 +
+                           self.gap + self.label_grid_width +
+                           self.gap + self.state_panel_width + self.gap)
+            self._draw_agent_panel(canvas, agent_panel_x, self.label_margin, agent_status)
 
         # Display
         cv2.imshow(self.window_name, canvas)
@@ -236,7 +257,7 @@ class VisualizerV2:
 
         # Draw controls at bottom
         controls = [
-            "G: Grid | R: Regions | T: Labels | I: State | Q: Quit"
+            "G: Grid | R: Regions | T: Labels | I: State | O: Agent | Q: Quit"
         ]
         y = self.canvas_height - 10
         for line in controls:
@@ -477,6 +498,153 @@ class VisualizerV2:
         """Toggle state info panel visibility"""
         self.show_state_panel = not self.show_state_panel
         return self.show_state_panel
+
+    def toggle_agent_panel(self):
+        """Toggle agent panel visibility"""
+        self.show_agent_panel = not self.show_agent_panel
+        return self.show_agent_panel
+
+    def _draw_agent_panel(self, canvas: np.ndarray, x_offset: int, y_offset: int,
+                          agent_status: Optional[Dict]):
+        """Draw the AI agent status and output panel"""
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.4
+        thickness = 1
+
+        # Draw panel background
+        panel_width = self.agent_panel_width
+        panel_height = self.agent_panel_height
+        cv2.rectangle(canvas, (x_offset, y_offset),
+                     (x_offset + panel_width, y_offset + panel_height),
+                     (25, 35, 45), -1)  # Dark blue background
+        cv2.rectangle(canvas, (x_offset, y_offset),
+                     (x_offset + panel_width, y_offset + panel_height),
+                     (80, 120, 160), 1)  # Border
+
+        # Draw header
+        cv2.putText(canvas, "AI Agent", (x_offset + 5, y_offset + 18),
+                   font, 0.5, (100, 180, 255), 1)
+
+        y = y_offset + 40
+        line_height = 16
+
+        if agent_status is None:
+            # Agent not initialized
+            cv2.putText(canvas, "Agent: DISABLED", (x_offset + 5, y),
+                       font, font_scale, (100, 100, 100), thickness)
+            y += line_height
+            cv2.putText(canvas, "Press 'M' then 'A' to enable", (x_offset + 5, y),
+                       font, font_scale, (80, 80, 80), thickness)
+            return
+
+        # --- Status indicators ---
+        cv2.putText(canvas, "STATUS:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
+        y += line_height
+
+        # Processing indicator
+        if agent_status.get("is_processing"):
+            cv2.putText(canvas, "  Processing...", (x_offset + 5, y),
+                       font, font_scale, (255, 255, 0), thickness)
+            # Draw spinning indicator
+            import time
+            spin_chars = "|/-\\"
+            spin_idx = int(time.time() * 4) % 4
+            cv2.putText(canvas, spin_chars[spin_idx], (x_offset + 120, y),
+                       font, font_scale, (255, 255, 0), thickness)
+        else:
+            cv2.putText(canvas, "  Idle", (x_offset + 5, y),
+                       font, font_scale, (100, 200, 100), thickness)
+        y += line_height
+
+        # Time since last decision
+        time_since = agent_status.get("time_since_decision")
+        if time_since is not None:
+            cv2.putText(canvas, f"  Last decision: {time_since:.1f}s ago", (x_offset + 5, y),
+                       font, font_scale, (180, 180, 180), thickness)
+        else:
+            cv2.putText(canvas, "  Last decision: --", (x_offset + 5, y),
+                       font, font_scale, (100, 100, 100), thickness)
+        y += line_height
+
+        # Pending actions
+        pending = agent_status.get("pending_actions", 0)
+        color = (100, 255, 100) if pending > 0 else (100, 100, 100)
+        cv2.putText(canvas, f"  Pending actions: {pending}", (x_offset + 5, y),
+                   font, font_scale, color, thickness)
+        y += line_height + 8
+
+        # --- Current Plan ---
+        cv2.putText(canvas, "PLAN:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
+        y += line_height
+
+        if agent_status.get("has_plan"):
+            goal = agent_status.get("plan_goal", "Unknown")
+            # Truncate goal if too long
+            if len(goal) > 40:
+                goal = goal[:37] + "..."
+            cv2.putText(canvas, f"  Goal: {goal}", (x_offset + 5, y),
+                       font, font_scale, (200, 255, 200), thickness)
+            y += line_height
+
+            steps = agent_status.get("plan_steps", 0)
+            cv2.putText(canvas, f"  Steps: {steps}", (x_offset + 5, y),
+                       font, font_scale, (180, 180, 180), thickness)
+            y += line_height
+
+            time_since_plan = agent_status.get("time_since_plan")
+            if time_since_plan is not None:
+                cv2.putText(canvas, f"  Plan age: {time_since_plan:.0f}s", (x_offset + 5, y),
+                           font, font_scale, (150, 150, 150), thickness)
+        else:
+            cv2.putText(canvas, "  (no plan yet)", (x_offset + 5, y),
+                       font, font_scale, (100, 100, 100), thickness)
+        y += line_height + 8
+
+        # --- Last Reasoning ---
+        cv2.putText(canvas, "REASONING:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
+        y += line_height
+
+        reasoning = agent_status.get("last_reasoning")
+        if reasoning:
+            # Word wrap the reasoning
+            words = reasoning.split()
+            line = "  "
+            max_chars = 42
+            lines_drawn = 0
+            max_lines = 6
+
+            for word in words:
+                if len(line) + len(word) + 1 > max_chars:
+                    if lines_drawn < max_lines:
+                        cv2.putText(canvas, line, (x_offset + 5, y),
+                                   font, font_scale, (255, 255, 200), thickness)
+                        y += line_height
+                        lines_drawn += 1
+                    line = "  " + word + " "
+                else:
+                    line += word + " "
+
+            if line.strip() and lines_drawn < max_lines:
+                cv2.putText(canvas, line, (x_offset + 5, y),
+                           font, font_scale, (255, 255, 200), thickness)
+                y += line_height
+        else:
+            cv2.putText(canvas, "  (waiting for first decision)", (x_offset + 5, y),
+                       font, font_scale, (100, 100, 100), thickness)
+            y += line_height
+        y += 8
+
+        # --- Error Display ---
+        error = agent_status.get("last_error")
+        if error:
+            cv2.putText(canvas, "ERROR:", (x_offset + 5, y), font, font_scale, (100, 100, 255), thickness)
+            y += line_height
+
+            # Truncate error if too long
+            if len(error) > 45:
+                error = error[:42] + "..."
+            cv2.putText(canvas, f"  {error}", (x_offset + 5, y),
+                       font, font_scale, (100, 100, 255), thickness)
 
     def close(self):
         """Close the visualization window"""
