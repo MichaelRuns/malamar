@@ -65,6 +65,12 @@ The tile labeller now uses **selection-aware** controls to avoid conflicts betwe
 | **m** | menu item |
 | **>** | cursor (menu selector) |
 
+#### Sprite Labelling
+| Key | Label |
+|-----|-------|
+| **p** | player sprite |
+| **n** | NPC sprite |
+
 #### Exit Labelling Mode
 | Key | Action |
 |-----|--------|

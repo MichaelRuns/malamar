@@ -44,6 +44,14 @@ class VisualizerV2:
         self.show_label_grid = True  # Toggle for label grid panel
         self.show_state_panel = True  # Toggle for state info panel
 
+        # Cache for expensive state panel computations
+        self._state_cache_hash = None
+        self._cached_menu = None
+        self._cached_hp = None
+        self._cached_names = None
+        self._cached_words = None
+        self._cached_groups = None
+
     def visualize(self, frame: np.ndarray, state: Optional[PerceptionState] = None):
         """
         Visualize frame with tile grid overlay
@@ -166,6 +174,9 @@ class VisualizerV2:
             "battle_menu": (255, 255, 100),   # Yellow
         }
 
+        # Create ONE overlay for all regions (O(1) copy instead of O(n))
+        overlay = canvas.copy()
+
         for name, region in state.regions.items():
             color = region_colors.get(name, (128, 128, 128))
 
@@ -175,10 +186,20 @@ class VisualizerV2:
             x2 = x_offset + (region.tile_end[1] + 1) * scaled_tile
             y2 = y_offset + (region.tile_end[0] + 1) * scaled_tile
 
-            # Draw semi-transparent overlay
-            overlay = canvas.copy()
+            # Draw filled rectangle on overlay
             cv2.rectangle(overlay, (x1, y1), (x2, y2), color, -1)
-            cv2.addWeighted(overlay, 0.2, canvas, 0.8, 0, canvas)
+
+        # Blend ONCE at the end
+        cv2.addWeighted(overlay, 0.2, canvas, 0.8, 0, canvas)
+
+        # Draw borders and labels (no blending needed)
+        for name, region in state.regions.items():
+            color = region_colors.get(name, (128, 128, 128))
+
+            x1 = x_offset + region.tile_start[1] * scaled_tile
+            y1 = y_offset + region.tile_start[0] * scaled_tile
+            x2 = x_offset + (region.tile_end[1] + 1) * scaled_tile
+            y2 = y_offset + (region.tile_end[0] + 1) * scaled_tile
 
             # Draw border
             cv2.rectangle(canvas, (x1, y1), (x2, y2), color, 2)
@@ -252,21 +273,31 @@ class VisualizerV2:
             char_x = x_offset + 10
             for col, char in enumerate(line):
                 # Color based on character type
-                if char == ".":
-                    color = (80, 80, 80)  # Dark gray for unlabeled
+                if char == "?":
+                    color = (60, 60, 60)  # Dark gray for unlabeled
+                elif char == " ":
+                    # Walkable terrain - skip drawing (blank)
+                    char_x += self.label_grid_char_width
+                    continue
                 elif char == "_":
-                    color = (150, 150, 150)  # Light gray for space
+                    color = (150, 150, 150)  # Light gray for space character
                 elif char.isalpha() and char.isupper():
-                    if char in "WBDT":  # Terrain (W=walkable, B=blocked, D=door, T=water)
+                    if char in "BDT":  # Terrain (B=blocked, D=door, T=water)
                         color = (100, 200, 100)  # Green for terrain
                     else:
                         color = (255, 255, 100)  # Yellow for text characters
                 elif char.isdigit():
                     color = (255, 200, 100)  # Orange for numbers
                 elif char == ">":
-                    color = (255, 255, 0)  # Bright cyan for cursor
+                    color = (255, 255, 0)  # Bright yellow for cursor
                 elif char == "U":
                     color = (100, 150, 255)  # Blue for UI elements
+                elif char == "@":
+                    color = (255, 100, 100)  # Red for player sprite
+                elif char == "N":
+                    color = (255, 180, 100)  # Orange for NPC sprite
+                elif char == "S":
+                    color = (255, 150, 150)  # Light red for other sprites
                 else:
                     color = (255, 100, 255)  # Magenta for punctuation/symbols
 
@@ -290,6 +321,15 @@ class VisualizerV2:
         font_scale = 0.4
         thickness = 1
 
+        # Cache expensive computations based on screen_hash
+        if self._state_cache_hash != state.screen_hash:
+            self._state_cache_hash = state.screen_hash
+            self._cached_menu = state.get_menu_selection()
+            self._cached_hp = state.get_battle_hp()
+            self._cached_names = state.get_battle_names()
+            self._cached_words = state.extract_words()
+            self._cached_groups = state.get_labeled_tiles_by_category()
+
         # Draw panel background
         panel_width = self.state_panel_width
         panel_height = self.state_panel_height
@@ -311,7 +351,7 @@ class VisualizerV2:
         cv2.putText(canvas, "MENU:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
         y += line_height
 
-        menu = state.get_menu_selection()
+        menu = self._cached_menu
         if menu.option:
             color = (0, 255, 0)  # Green for active selection
             cv2.putText(canvas, f"  > {menu.option}", (x_offset + 5, y), font, font_scale, color, thickness)
@@ -325,7 +365,7 @@ class VisualizerV2:
         cv2.putText(canvas, "HP BARS:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
         y += line_height
 
-        hp = state.get_battle_hp()
+        hp = self._cached_hp
 
         # Enemy HP
         enemy_pct = hp.enemy.percentage
@@ -361,7 +401,7 @@ class VisualizerV2:
         cv2.putText(canvas, "POKEMON:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
         y += line_height
 
-        names = state.get_battle_names()
+        names = self._cached_names
         if names.enemy_name:
             cv2.putText(canvas, f"  Enemy: {names.enemy_name}", (x_offset + 5, y), font, font_scale, (255, 150, 100), thickness)
         else:
@@ -378,7 +418,7 @@ class VisualizerV2:
         cv2.putText(canvas, "WORDS:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
         y += line_height
 
-        words = state.extract_words()
+        words = self._cached_words
         if words:
             # Show up to 8 words
             word_strs = [w.word for w in words[:8]]
@@ -404,12 +444,14 @@ class VisualizerV2:
         cv2.putText(canvas, "TILES:", (x_offset + 5, y), font, font_scale, (150, 200, 255), thickness)
         y += line_height
 
-        groups = state.get_labeled_tiles_by_category()
+        groups = self._cached_groups
         cv2.putText(canvas, f"  Text: {len(groups.text)}", (x_offset + 5, y), font, font_scale, (255, 255, 100), thickness)
         cv2.putText(canvas, f"Terrain: {len(groups.terrain)}", (x_offset + 90, y), font, font_scale, (100, 200, 100), thickness)
         y += line_height
         cv2.putText(canvas, f"  UI: {len(groups.ui)}", (x_offset + 5, y), font, font_scale, (100, 150, 255), thickness)
-        cv2.putText(canvas, f"Unlabeled: {len(groups.unlabeled)}", (x_offset + 90, y), font, font_scale, (100, 100, 100), thickness)
+        cv2.putText(canvas, f"Sprite: {len(groups.sprite)}", (x_offset + 90, y), font, font_scale, (255, 100, 100), thickness)
+        y += line_height
+        cv2.putText(canvas, f"  Unlabeled: {len(groups.unlabeled)}", (x_offset + 5, y), font, font_scale, (100, 100, 100), thickness)
 
     def toggle_grid(self):
         """Toggle grid visibility"""

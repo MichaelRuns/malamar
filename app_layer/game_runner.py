@@ -276,7 +276,7 @@ while running:
                         print(f"🏷️  Opening tile labeler for {filepath}")
                         subprocess.Popen([
                             "python", "tools/tile_labeller_interactive.py",
-                            filepath, "--labels", "tile_labels.json"
+                            "--image", filepath, "--labels", "tile_labels.json"
                         ], cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         elif event.type == pygame.KEYUP and manual_mode:
             if event.key == pygame.K_z: pyboy.button_release('a')

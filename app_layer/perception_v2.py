@@ -79,6 +79,7 @@ class LabeledTileGroups:
     text: List['TileInfo']
     terrain: List['TileInfo']
     ui: List['TileInfo']
+    sprite: List['TileInfo']
     unlabeled: List['TileInfo']
 
 
@@ -253,17 +254,17 @@ class PerceptionState:
         Get a single display character for a tile (for visualization).
 
         Returns:
-            '.' for unlabeled tiles
+            '?' for unlabeled tiles
             The character itself for char_X labels (e.g., 'A', '5', '!')
             '_' for space characters
-            First letter of terrain type (W, B, D, T)
+            ' ' for walkable terrain, first letter for others (B, D, T)
             '>' for cursor
             'U' for other UI elements
-            '?' for unknown labels
+            '.' for unknown labels
         """
         label = self.get_label_at(row, col)
         if label is None:
-            return "."
+            return "?"
         elif label.startswith("char_"):
             char = label[5:]
             if char == "SPACE":
@@ -271,11 +272,19 @@ class PerceptionState:
             return char if len(char) == 1 else char[0]
         elif label.startswith("terrain_"):
             terrain = label[8:]
+            if terrain == "walkable":
+                return " "
             return terrain[0].upper() if terrain else "T"
         elif label.startswith("ui_"):
             if label == "ui_cursor":
                 return ">"
             return "U"
+        elif label.startswith("sprite_"):
+            if label == "sprite_player":
+                return "@"
+            elif label == "sprite_npc":
+                return "N"
+            return "S"
         else:
             return "?"
 
@@ -311,11 +320,12 @@ class PerceptionState:
         Group all tiles by their label category.
 
         Returns:
-            LabeledTileGroups with tiles organized by type (text/terrain/ui/unlabeled)
+            LabeledTileGroups with tiles organized by type (text/terrain/ui/sprite/unlabeled)
         """
         text_tiles = []
         terrain_tiles = []
         ui_tiles = []
+        sprite_tiles = []
         unlabeled_tiles = []
 
         for tile in self.tiles:
@@ -325,6 +335,8 @@ class PerceptionState:
                 terrain_tiles.append(tile)
             elif tile.tile_type == "ui":
                 ui_tiles.append(tile)
+            elif tile.tile_type == "sprite":
+                sprite_tiles.append(tile)
             else:
                 unlabeled_tiles.append(tile)
 
@@ -332,6 +344,7 @@ class PerceptionState:
             text=text_tiles,
             terrain=terrain_tiles,
             ui=ui_tiles,
+            sprite=sprite_tiles,
             unlabeled=unlabeled_tiles
         )
 

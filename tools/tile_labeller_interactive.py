@@ -19,6 +19,7 @@ Controls:
         Punctuation: . , ! ? : ; - ' " ( ) / SPACE
         w=walkable, b=blocked, t=water, d=door
         h=hp_bar, m=menu_item, >=cursor
+        p=player sprite, n=npc sprite
         c: clear selection (return to control mode)
 
 This tool helps you manually label tile hashes for the perception system.
@@ -87,6 +88,8 @@ class InteractiveTileLabeller:
         print("  h: hp_bar")
         print("  m: menu_item")
         print("  >: cursor (menu selector)")
+        print("  p: player sprite")
+        print("  n: npc sprite")
         print("  c: clear selection (return to control mode)")
         print("="*60 + "\n")
 
@@ -174,6 +177,14 @@ class InteractiveTileLabeller:
                 elif key == ord('>'):
                     self._label_selected("ui_cursor", "ui")
                     print(f"Labeled {len(self.selected_tiles)} tiles as cursor")
+
+                # Sprite types
+                elif key == ord('p'):
+                    self._label_selected("sprite_player", "sprite")
+                    print(f"Labeled {len(self.selected_tiles)} tiles as player sprite")
+                elif key == ord('n'):
+                    self._label_selected("sprite_npc", "sprite")
+                    print(f"Labeled {len(self.selected_tiles)} tiles as NPC sprite")
 
                 # Clear selection
                 elif key == ord('c'):
